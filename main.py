@@ -7,205 +7,197 @@ from dataclasses import dataclass
 # ==========================================
 @dataclass
 class NoonState:
-    # [Eye Shape]
-    eye_eccentricity: float = 1.0  # 1.0=원, >1.0=가로타원, <1.0=세로타원
+    # [Face Orientation] 고개 돌림 (Head Turn)
+    gaze_x: float = 0.0
+    gaze_y: float = 0.0
     
-    # [Eye Motion]
-    pupil_x: float = 0.0
-    pupil_y: float = 0.0
-    pupil_scale: float = 1.0
+    # [1. Outer Circle] 제일 큰 원 (전체 크기 & 비율)
+    eye_scale: float = 1.0        # 전체 크기 (지름)
+    eye_eccentricity: float = 1.0 # 1.0=원, >1.0=가로타원 (이심률)
     
-    # [Eyelids]
-    eyelid_top: float = 0.0
-    eyelid_btm: float = 0.0
+    # [2. Inner Circle] 두 번째 작은 원 (링 두께 결정)
+    ring_inner_ratio: float = 0.65 # 외경 대비 내경 비율 (0.0~1.0)
+                                   # 0.9 = 얇은 링, 0.5 = 두꺼운 링
     
-    # [Color & Hardware]
-    color: tuple = (100, 200, 255) 
-    head_pan: float = 0.0
+    # [3. Reflection] 반사광 (Pill Shape)
+    highlight_scale: float = 1.0   # 반사광 크기
+    highlight_x: float = 0.3       # 반사광 위치 X (눈 중심 기준 비율)
+    highlight_y: float = -0.3      # 반사광 위치 Y (눈 중심 기준 비율)
+    
+    # [Eyebrows] - Default
+    eyebrow_lift: float = 0.0      # 눈썹 높이
+    
+    # [System]
+    color: tuple = (180, 180, 180) # LG Styler 스타일의 밝은 회색
 
 # ==========================================
-# 2. UI SYSTEM (New!)
+# 2. UI SLIDER
 # ==========================================
 class SimpleSlider:
-    """ 개발/디자인 단계에서 파라미터를 실시간 튜닝하기 위한 UI 컴포넌트 """
     def __init__(self, x, y, w, h, min_val, max_val, label, attr_name):
         self.rect = pygame.Rect(x, y, w, h)
-        self.min_val = min_val
-        self.max_val = max_val
-        self.label = label
-        self.attr_name = attr_name # NoonState의 속성 이름
+        self.min_val, self.max_val = min_val, max_val
+        self.label, self.attr_name = label, attr_name
         self.dragging = False
         self.font = pygame.font.SysFont("Arial", 14)
 
-    def handle_event(self, event, state: NoonState):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.rect.collidepoint(event.pos):
-                self.dragging = True
+    def handle_event(self, event, state):
+        if event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos):
+            self.dragging = True
         elif event.type == pygame.MOUSEBUTTONUP:
             self.dragging = False
         
         if self.dragging:
-            mx, my = pygame.mouse.get_pos()
-            # 마우스 위치를 0.0 ~ 1.0 비율로 변환
-            ratio = (mx - self.rect.x) / self.rect.width
-            ratio = max(0.0, min(1.0, ratio))
-            
-            # 값 계산 (Lerp)
-            val = self.min_val + (ratio * (self.max_val - self.min_val))
-            
-            # State 업데이트 (Reflection)
-            setattr(state, self.attr_name, val)
+            mx, _ = pygame.mouse.get_pos()
+            ratio = max(0.0, min(1.0, (mx - self.rect.x) / self.rect.width))
+            setattr(state, self.attr_name, self.min_val + (ratio * (self.max_val - self.min_val)))
 
-    def draw(self, screen, state: NoonState):
-        # 현재 값 가져오기
-        current_val = getattr(state, self.attr_name)
-        
-        # 배경 바
-        pygame.draw.rect(screen, (60, 60, 60), self.rect)
-        
-        # 채워진 바
-        ratio = (current_val - self.min_val) / (self.max_val - self.min_val)
-        fill_rect = pygame.Rect(self.rect.x, self.rect.y, self.rect.width * ratio, self.rect.height)
-        pygame.draw.rect(screen, (100, 180, 255), fill_rect)
-        
-        # 테두리
+    def draw(self, screen, state):
+        val = getattr(state, self.attr_name)
+        ratio = (val - self.min_val) / (self.max_val - self.min_val)
+        pygame.draw.rect(screen, (50, 50, 50), self.rect)
+        pygame.draw.rect(screen, (150, 150, 150), (self.rect.x, self.rect.y, self.rect.w * ratio, self.rect.h))
         pygame.draw.rect(screen, (200, 200, 200), self.rect, 1)
-
-        # 텍스트 라벨 (이름 + 값)
-        text = f"{self.label}: {current_val:.2f}"
-        text_surf = self.font.render(text, True, (220, 220, 220))
-        screen.blit(text_surf, (self.rect.x, self.rect.y - 18))
+        screen.blit(self.font.render(f"{self.label}: {val:.2f}", True, (220,220,220)), (self.rect.x, self.rect.y-18))
 
 # ==========================================
-# 3. ENGINE (Logic)
+# 3. ENGINE
 # ==========================================
 class NoonEngine:
     def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.eye_spacing = width * 0.25 
-        self.base_radius = min(width, height) * 0.18 # 기본 반지름
+        self.width, self.height = width, height
+        self.base_spacing = width * 0.22 # 눈 사이 간격
+        self.base_radius = min(width, height) * 0.22 # 기본 반지름
 
-    def get_eye_geometry(self, is_right_eye, eccentricity):
-        """ 눈의 위치와 타원형 사각형(Rect) 정보를 계산 """
-        cx_offset = self.eye_spacing if is_right_eye else -self.eye_spacing
-        cx = (self.width // 2) + cx_offset
-        cy = self.height // 2
+    def get_eye_center(self, is_right_eye, state):
+        """ 얼굴 회전(Gaze)에 따른 눈의 중심 좌표 계산 """
+        center_offset = self.base_spacing if is_right_eye else -self.base_spacing
         
-        # 이심률 적용: 가로 길이 = 반지름 * 이심률, 세로 길이 = 반지름
-        w = self.base_radius * 2 * eccentricity
-        h = self.base_radius * 2
+        # Head Turn Logic (화면 범위의 30% 정도만 이동)
+        move_x = state.gaze_x * (self.width * 0.3)
+        move_y = state.gaze_y * (self.height * 0.2)
         
-        return cx, cy, w, h
-
-    def ratio_to_pixel(self, x_ratio, y_ratio, cx, cy, w, h):
-        """ 타원의 크기에 맞춰 동공 위치 계산 """
-        # 동공 이동 범위 (흰자위 크기의 60%)
-        move_x = (w / 2) * 0.6
-        move_y = (h / 2) * 0.6
-        
-        px = cx + (x_ratio * move_x)
-        py = cy + (y_ratio * move_y)
-        return px, py
+        cx = (self.width / 2) + center_offset + move_x
+        cy = (self.height / 2) + move_y
+        return cx, cy
 
 # ==========================================
-# 4. RENDERER (View)
+# 4. RENDERER (Updated for Image Style)
 # ==========================================
 class NoonRenderer:
     def __init__(self, screen, engine):
         self.screen = screen
         self.engine = engine
+        self.bg_color = (0, 0, 0) # 완전 블랙 배경
 
     def draw(self, state: NoonState):
-        self.screen.fill((30, 30, 30)) # 배경
+        self.screen.fill(self.bg_color)
+        self._draw_eye_unit(state, is_right=False)
+        self._draw_eye_unit(state, is_right=True)
 
-        self._draw_eye(state, is_right=False)
-        self._draw_eye(state, is_right=True)
-
-    def _draw_eye(self, state, is_right):
-        cx, cy, w, h = self.engine.get_eye_geometry(is_right, state.eye_eccentricity)
+    def _draw_eye_unit(self, state, is_right):
+        cx, cy = self.engine.get_eye_center(is_right, state)
         
-        # 1. Sclera (흰자위) - Ellipse
-        # Pygame의 draw.ellipse는 감싸는 사각형(Rect)을 받습니다.
-        eye_rect = pygame.Rect(cx - w/2, cy - h/2, w, h)
-        pygame.draw.ellipse(self.screen, (220, 220, 220), eye_rect)
-
-        # 2. Pupil (동공)
-        px, py = self.engine.ratio_to_pixel(state.pupil_x, state.pupil_y, cx, cy, w, h)
+        # 치수 계산
+        outer_w = self.engine.base_radius * 2 * state.eye_eccentricity * state.eye_scale
+        outer_h = self.engine.base_radius * 2 * state.eye_scale
         
-        # 동공 크기도 이심률을 따라갈 것인가? -> 보통은 동공은 원형 유지 or 약간 변형
-        # 여기서는 동공은 원형을 유지하되 크기만 조절
-        pupil_r = (self.engine.base_radius * 0.45 * state.pupil_scale)
-        pygame.draw.circle(self.screen, state.color, (int(px), int(py)), int(pupil_r))
+        inner_w = outer_w * state.ring_inner_ratio
+        inner_h = outer_h * state.ring_inner_ratio
+
+        # -------------------------------------------------
+        # [Element 1] Outer Circle (Ring Body)
+        # -------------------------------------------------
+        # 그라데이션 대신 단색 Flat 디자인 적용 (이미지 기반)
+        outer_rect = pygame.Rect(cx - outer_w/2, cy - outer_h/2, outer_w, outer_h)
+        pygame.draw.ellipse(self.screen, state.color, outer_rect)
+
+        # -------------------------------------------------
+        # [Element 2] Inner Circle (Hole)
+        # -------------------------------------------------
+        # 배경색과 동일한 원을 그려 구멍을 뚫은 효과를 냄
+        inner_rect = pygame.Rect(cx - inner_w/2, cy - inner_h/2, inner_w, inner_h)
+        pygame.draw.ellipse(self.screen, self.bg_color, inner_rect)
+
+        # -------------------------------------------------
+        # [Element 3] Reflection (Highlight)
+        # -------------------------------------------------
+        # 위치: Inner Hole 내부에서의 상대 좌표
+        # 알약 모양(Pill Shape) = Rounded Rect
+        hl_w = inner_w * 0.3 * state.highlight_scale
+        hl_h = inner_h * 0.2 * state.highlight_scale
         
-        # Highlight
-        pygame.draw.circle(self.screen, (255, 255, 255), 
-                           (int(px - pupil_r*0.3), int(py - pupil_r*0.3)), 
-                           int(pupil_r * 0.3))
+        # 하이라이트 위치 오프셋 (비율 -> 픽셀 변환)
+        hl_cx = cx + (state.highlight_x * inner_w * 0.4)
+        hl_cy = cy + (state.highlight_y * inner_h * 0.4)
+        
+        hl_rect = pygame.Rect(hl_cx - hl_w/2, hl_cy - hl_h/2, hl_w, hl_h)
+        
+        # Pill Shape: border_radius를 높이의 절반으로 설정하면 알약 모양이 됨
+        pygame.draw.rect(self.screen, (255, 255, 255), hl_rect, border_radius=int(hl_h))
 
-        # 3. Eyelids (눈꺼풀)
-        # 타원형 눈꺼풀을 그리는 건 복잡하므로, 현재는 직사각형으로 심플하게 가림 (Robot Style)
-        if state.eyelid_top > 0:
-            lid_h = h * state.eyelid_top
-            pygame.draw.rect(self.screen, (30, 30, 30), 
-                             (cx - w/2 - 5, cy - h/2 - 5, w + 10, lid_h + 5)) # 조금 넉넉하게
+        # -------------------------------------------------
+        # [Element 4] Eyebrow (Default)
+        # -------------------------------------------------
+        self._draw_eyebrow(cx, cy, outer_w, outer_h, state)
 
-        if state.eyelid_btm > 0:
-            lid_h = h * state.eyelid_btm
-            pygame.draw.rect(self.screen, (30, 30, 30), 
-                             (cx - w/2 - 5, (cy + h/2) - lid_h, w + 10, lid_h + 5))
+    def _draw_eyebrow(self, cx, cy, eye_w, eye_h, state):
+        """ 심플한 회색 아치형 눈썹 """
+        # 눈 위쪽으로 위치 잡기
+        brow_y = cy - (eye_h * 0.6) - (state.eyebrow_lift * 20)
+        
+        # 아치 그리기 (Arc)
+        # Rect: 아치가 그려질 가상의 사각형 박스
+        arc_w = eye_w * 1.2
+        arc_h = eye_h * 0.6
+        arc_rect = pygame.Rect(cx - arc_w/2, brow_y - arc_h/2, arc_w, arc_h)
+        
+        # Start/End Angle (Radian): 0 ~ Pi (180도) -> 약간 평평하게 조정
+        # Pygame의 arc는 0도가 3시 방향, 시계 반대방향 증가
+        # 45도 ~ 135도 사이를 그림
+        import math
+        pygame.draw.arc(self.screen, state.color, arc_rect, 
+                        math.radians(40), math.radians(140), width=12)
 
 # ==========================================
 # 5. MAIN
 # ==========================================
 def main():
     pygame.init()
-    width, height = 800, 600
+    width, height = 800, 400
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("noon_noon Configurator")
+    pygame.display.set_caption("noon_noon (Ring Topology)")
     clock = pygame.time.Clock()
 
     engine = NoonEngine(width, height)
     renderer = NoonRenderer(screen, engine)
     state = NoonState()
 
-    # [UI 구성] 슬라이더 패널 생성
+    # 컨트롤러 구성
     sliders = [
-        SimpleSlider(20, 50, 200, 20, 0.5, 2.5, "Eccentricity (Shape)", "eye_eccentricity"),
-        SimpleSlider(20, 100, 200, 20, 0.5, 2.0, "Pupil Scale", "pupil_scale"),
-        SimpleSlider(20, 150, 200, 20, 0.0, 1.0, "Eyelid Top", "eyelid_top"),
-        SimpleSlider(20, 200, 200, 20, 0.0, 1.0, "Eyelid Bottom", "eyelid_btm"),
-        # 시선은 마우스로 제어하므로 슬라이더 제외
+        SimpleSlider(20, 20, 150, 15, 0.5, 1.5, "1. Eye Scale", "eye_scale"),
+        SimpleSlider(20, 50, 150, 15, 0.3, 0.9, "2. Ring Thickness (Inner)", "ring_inner_ratio"),
+        SimpleSlider(20, 80, 150, 15, 0.5, 2.0, "3. Highlight Size", "highlight_scale"),
+        SimpleSlider(20, 110, 150, 15, -1.0, 1.0, "Reflect Pos X", "highlight_x"),
+        SimpleSlider(20, 140, 150, 15, -1.0, 1.0, "Reflect Pos Y", "highlight_y"),
+        SimpleSlider(20, 170, 150, 15, 0.8, 1.4, "Eccentricity", "eye_eccentricity"),
     ]
 
     running = True
     while running:
-        # 1. Event Handling
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            
-            # UI 이벤트 전달
-            for slider in sliders:
-                slider.handle_event(event, state)
+            if event.type == pygame.QUIT: running = False
+            for s in sliders: s.handle_event(event, state)
 
-        # 2. Logic (Mouse Gaze)
-        # 슬라이더 조작 중이 아닐 때만 시선 추적 (간섭 방지)
+        # Logic: 마우스 = 고개 돌리기 (Head Turn)
         if not any(s.dragging for s in sliders):
             mx, my = pygame.mouse.get_pos()
-            state.pupil_x = (mx - width/2) / (width/2)
-            state.pupil_y = (my - height/2) / (height/2)
-            # Clamp
-            state.pupil_x = max(-1.0, min(1.0, state.pupil_x))
-            state.pupil_y = max(-1.0, min(1.0, state.pupil_y))
+            state.gaze_x = max(-1.0, min(1.0, (mx - width/2) / (width/2)))
+            state.gaze_y = max(-1.0, min(1.0, (my - height/2) / (height/2)))
 
-        # 3. Render
         renderer.draw(state)
+        for s in sliders: s.draw(screen, state)
         
-        # Draw UI on top
-        for slider in sliders:
-            slider.draw(screen, state)
-            
         pygame.display.flip()
         clock.tick(60)
 
