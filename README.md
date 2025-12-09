@@ -6,12 +6,12 @@
 <div align="center">
   <img src="assets/preview.png" width="80%" alt="noon_noon Preview" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
   <br>
-  <p><em>(Note: The preview image shows a previous version. The UI now features emotion buttons.)</em></p>
+  <p><em>(Note: The preview image may not reflect the latest UI.)</em></p>
 </div>
 
 
-**noon_noon** is a universal, hardware-agnostic robot eye expression library.  
-It decouples logic from hardware, using a **"Ratio over Pixel"** philosophy to ensure consistent expressions across any screen resolution or motor configuration.
+**noon_noon** is a universal, hardware-agnostic robot eye expression library for Python.  
+It provides a high-level controller to easily render dynamic, emotional eyes, abstracting away complex state management and rendering logic.
 
 > **Navigation:**
 > [🇺🇸 English](#english) | [🇰🇷 한국어](#korean)
@@ -22,17 +22,17 @@ It decouples logic from hardware, using a **"Ratio over Pixel"** philosophy to e
 ## 🇺🇸 English
 
 ### Core Philosophy
-* **Ratio over Pixel:** Position and scale are communicated via ratios (`-1.0` to `1.0`), not absolute pixels.
-* **Config over Code:** Design expressions by tweaking parameters, not rewriting rendering loops.
-* **Motor Agnostic:** The core logic is independent of physical motors, making it adaptable to various hardware setups.
+* **Simple API:** A high-level `Noon` controller class handles all the complexity. You only need to call `set_emotion()`, `update()`, and `draw()`.
+* **Data-Driven:** Emotions and dynamic effects (like shaking) are defined in a simple preset file, allowing for easy customization without changing library code.
+* **Hardware Agnostic:** The core logic is independent of physical hardware, making it adaptable to any screen-based project (Raspberry Pi, desktop, etc.).
 
 ### Features
-* **Emotion Preset System:** Easily switch between pre-defined emotions like "neutral" and "angry."
-* **Dynamic Expressions:** The "angry" emotion includes a unique eyebrow shape and a shaking animation for added effect.
-* **Smooth Transitions:** A built-in `transition_state` function allows for smooth interpolation between different emotional states.
-* **Real-Time Tuning:** Use on-screen sliders to override and fine-tune emotion parameters in real-time. The adjusted values persist until a new emotion is selected.
+* **High-Level Controller:** The `Noon` class encapsulates all necessary components (`engine`, `renderer`, `state`).
+* **Emotion Preset System:** Easily switch between pre-defined emotions. Adding new emotions is as simple as editing the `presets.py` file.
+* **Dynamic Effects:** The preset system supports defining dynamic animations, such as the shaking effect for the "angry" emotion.
+* **Smooth Transitions:** Built-in logic for smooth interpolation between different emotional states.
 
-### How to Run the Demo
+### How to Use `noon_noon`
 
 This project uses **[uv](https://github.com/astral-sh/uv)** for package management.
 
@@ -43,17 +43,15 @@ This project uses **[uv](https://github.com/astral-sh/uv)** for package manageme
    uv sync
    ```
 
-2. **Run the Demo with UI**
-   This runs the main application which includes UI sliders for debugging.
+2. **Run the Demo**
+   This runs an application with UI controls for testing.
    ```bash
    uv run main.py
    ```
 
-### Using as a Library (e.g., on Raspberry Pi)
+### Using as a Library (Recommended)
 
-You can import `noon_noon`'s core modules into your own Python application. This is ideal for projects like Raspberry Pi robots where you control emotions via GPIO buttons or other inputs, without the need for UI sliders.
-
-The key is to create your own application loop and use `noon_noon`'s components to manage state and render the eyes.
+The intended use of `noon_noon` is as a library in your own project. The `Noon` controller makes this incredibly simple.
 
 **Example (`rpi_example.py`):**
 
@@ -62,36 +60,20 @@ The following example shows how to switch between "neutral" and "angry" expressi
 ```python
 import pygame
 import sys
-import random
-
-# Import core modules from the noon_noon library
-from noon.model import NoonState
-from noon.engine import NoonEngine
-from noon.face import NoonFaceRenderer
-from noon.presets import EMOTION_PRESETS
-from noon.transition import transition_state, lerp
+from noon import Noon  # Import the main controller
 
 def main():
-    # 1. Initialize Pygame and screen
+    # 1. Initialize Pygame and a screen
     pygame.init()
-    # On Raspberry Pi, you might use fullscreen
-    # screen = pygame.display.set_mode((800, 400), pygame.FULLSCREEN)
     screen = pygame.display.set_mode((800, 400))
-    pygame.mouse.set_visible(False)
     clock = pygame.time.Clock()
 
-    # 2. Initialize noon_noon components
-    state = NoonState()
-    engine = NoonEngine(screen.get_width(), screen.get_height())
-    renderer = NoonFaceRenderer(screen, engine)
+    # 2. Initialize the Noon controller (just one line)
+    eyes = Noon(screen)
 
-    # 3. Set initial emotion
-    current_emotion = "neutral"
-    target_state_dict = EMOTION_PRESETS[current_emotion]
-    for key, value in target_state_dict.items():
-        setattr(state, key, value)
+    print("App running... Press 'n' for neutral, 'a' for angry. Press 'q' to quit.")
 
-    # 4. Main application loop
+    # 3. Main application loop
     running = True
     while running:
         # --- Handle your inputs (e.g., GPIO, keyboard) ---
@@ -100,26 +82,16 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_a:
-                    current_emotion = "angry"
-                    target_state_dict = EMOTION_PRESETS[current_emotion]
+                    eyes.set_emotion("angry") # Simply set the desired emotion
                 elif event.key == pygame.K_n:
-                    current_emotion = "neutral"
-                    target_state_dict = EMOTION_PRESETS[current_emotion]
+                    eyes.set_emotion("neutral")
         
-        # --- Update state ---
-        # 1. Smoothly transition to the target emotion state
-        transition_state(state, target_state_dict, 0.1)
+        # --- Update and Render ---
+        screen.fill((0, 0, 0))  # Clear screen with your background color
         
-        # 2. Add dynamic effects for specific emotions
-        if current_emotion == "angry":
-            state.shake_x = random.uniform(-2.0, 2.0)
-            state.shake_y = random.uniform(-2.0, 2.0)
-        else:
-            state.shake_x = lerp(state.shake_x, 0, 0.2)
-            state.shake_y = lerp(state.shake_y, 0, 0.2)
-            
-        # --- Render the eyes ---
-        renderer.draw(state)
+        eyes.update()  # Update all internal states, transitions, and effects
+        eyes.draw()    # Draw the eyes to the screen
+        
         pygame.display.flip()
         clock.tick(60)
 
@@ -140,17 +112,17 @@ if __name__ == "__main__":
 ## 🇰🇷 한국어
 
 ### 핵심 철학
-* **Ratio over Pixel:** 좌표는 픽셀이 아닌 비율(`-1.0` ~ `1.0`)로 소통합니다.
-* **Config over Code:** 코드를 수정하는 대신, 파라미터 값만으로 다양한 디자인을 만듭니다.
-* **Motor Agnostic:** 핵심 로직이 물리 모터와 독립적이므로, 다양한 하드웨어 환경에 적용할 수 있습니다.
+* **단순한 API:** `Noon` 컨트롤러 클래스가 모든 복잡성을 관리합니다. `set_emotion()`, `update()`, `draw()`만 호출하면 됩니다.
+* **데이터 기반 설계:** 감정과 동적 효과(떨림 등)가 간단한 프리셋 파일에 정의되어 있어, 라이브러리 코드 수정 없이 쉽게 커스터마이징할 수 있습니다.
+* **하드웨어 독립성:** 핵심 로직이 물리 하드웨어와 독립적이므로, 어떤 스크린 기반 프로젝트(라즈베리파이, 데스크탑 등)에도 적용할 수 있습니다.
 
 ### 주요 기능
-* **감정 프리셋 시스템:** 'neutral'(중립)과 'angry'(화남) 등 미리 정의된 감정 표현을 쉽게 전환합니다.
-* **동적 표현:** 'angry' 감정은 고유한 눈썹 모양과 미세한 떨림 애니메이션을 포함하여 표현을 극대화합니다.
-* **부드러운 전환:** `transition_state` 함수를 통해 서로 다른 감정 상태를 부드럽게 보간할 수 있습니다.
-* **실시간 튜닝:** 화면의 슬라이더를 사용해 감정 프리셋의 값을 덮어쓰고 실시간으로 미세 조정할 수 있습니다. 조정된 값은 다른 감정을 선택하기 전까지 유지됩니다.
+* **고수준 컨트롤러:** `Noon` 클래스가 `engine`, `renderer`, `state` 등 모든 필요 컴포넌트를 캡슐화합니다.
+* **감정 프리셋 시스템:** 미리 정의된 감정들을 쉽게 전환할 수 있습니다. `presets.py` 파일 수정만으로 새로운 감정을 간단히 추가할 수 있습니다.
+* **동적 효과:** 프리셋 시스템을 통해 'angry' 감정의 떨림 효과와 같은 동적 애니메이션을 정의하고 적용할 수 있습니다.
+* **부드러운 전환:** 서로 다른 감정 상태를 부드럽게 보간하는 로직이 내장되어 있습니다.
 
-### 데모 실행 방법
+### `noon_noon` 사용법
 
 이 프로젝트는 **[uv](https://github.com/astral-sh/uv)**를 사용하여 패키지를 관리합니다.
 
@@ -161,17 +133,15 @@ if __name__ == "__main__":
    uv sync
    ```
 
-2. **UI 데모 실행**
-   디버깅용 UI 슬라이더가 포함된 메인 애플리케이션을 실행합니다.
+2. **데모 실행**
+   테스트용 UI 컨트롤이 포함된 애플리케이션을 실행합니다.
    ```bash
    uv run main.py
    ```
 
-### 라이브러리로 사용하기 (예: 라즈베리파이)
+### 라이브러리로 사용하기 (권장)
 
-`noon_noon`의 핵심 모듈을 당신의 파이썬 프로젝트로 가져와 사용할 수 있습니다. 이 방식은 GPIO 버튼 등 별도의 입력으로 감정을 제어하는 라즈베리파이 로봇 프로젝트에 이상적입니다.
-
-핵심은 UI 슬라이더 없이, 자신만의 애플리케이션 루프를 만들고 `noon_noon`의 컴포넌트를 사용해 상태를 관리하고 눈을 그리는 것입니다.
+`noon_noon`은 당신의 프로젝트에서 라이브러리로 사용하는 것을 권장합니다. `Noon` 컨트롤러는 이 과정을 매우 간단하게 만들어줍니다.
 
 **사용 예제 (`rpi_example.py`):**
 
@@ -180,36 +150,20 @@ if __name__ == "__main__":
 ```python
 import pygame
 import sys
-import random
-
-# noon_noon 라이브러리의 핵심 모듈들을 가져옵니다.
-from noon.model import NoonState
-from noon.engine import NoonEngine
-from noon.face import NoonFaceRenderer
-from noon.presets import EMOTION_PRESETS
-from noon.transition import transition_state, lerp
+from noon import Noon  # 메인 컨트롤러 임포트
 
 def main():
     # 1. Pygame 및 스크린 초기화
     pygame.init()
-    # 라즈베리파이에서는 전체화면으로 설정할 수 있습니다.
-    # screen = pygame.display.set_mode((800, 400), pygame.FULLSCREEN)
     screen = pygame.display.set_mode((800, 400))
-    pygame.mouse.set_visible(False)
     clock = pygame.time.Clock()
 
-    # 2. noon_noon 컴포넌트 초기화
-    state = NoonState()
-    engine = NoonEngine(screen.get_width(), screen.get_height())
-    renderer = NoonFaceRenderer(screen, engine)
+    # 2. Noon 컨트롤러 초기화 (단 한 줄)
+    eyes = Noon(screen)
 
-    # 3. 초기 감정 설정
-    current_emotion = "neutral"
-    target_state_dict = EMOTION_PRESETS[current_emotion]
-    for key, value in target_state_dict.items():
-        setattr(state, key, value)
+    print("App running... Press 'n' for neutral, 'a' for angry. Press 'q' to quit.")
 
-    # 4. 메인 애플리케이션 루프
+    # 3. 메인 애플리케이션 루프
     running = True
     while running:
         # --- 입력 처리 (예: GPIO, 키보드) ---
@@ -218,26 +172,16 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_a:
-                    current_emotion = "angry"
-                    target_state_dict = EMOTION_PRESETS[current_emotion]
+                    eyes.set_emotion("angry") # 원하는 감정을 간단히 설정
                 elif event.key == pygame.K_n:
-                    current_emotion = "neutral"
-                    target_state_dict = EMOTION_PRESETS[current_emotion]
+                    eyes.set_emotion("neutral")
         
-        # --- 상태 업데이트 ---
-        # 1. 목표 감정 상태로 부드럽게 전환
-        transition_state(state, target_state_dict, 0.1)
+        # --- 업데이트 및 렌더링 ---
+        screen.fill((0, 0, 0))  # 원하는 배경색으로 스크린 채우기
         
-        # 2. 특정 감정에 대한 동적 효과 추가
-        if current_emotion == "angry":
-            state.shake_x = random.uniform(-2.0, 2.0)
-            state.shake_y = random.uniform(-2.0, 2.0)
-        else:
-            state.shake_x = lerp(state.shake_x, 0, 0.2)
-            state.shake_y = lerp(state.shake_y, 0, 0.2)
-            
-        # --- 렌더링 ---
-        renderer.draw(state)
+        eyes.update()  # 모든 내부 상태, 전환, 효과를 업데이트
+        eyes.draw()    # 스크린에 눈 그리기
+        
         pygame.display.flip()
         clock.tick(60)
 
