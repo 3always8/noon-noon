@@ -1,0 +1,42 @@
+name: Update README with Code Snippets
+
+on:
+  push:
+    branches:
+      - main
+    # rpi_example.py 또는 README 템플릿이 변경될 때만 실행합니다.
+    paths:
+      - 'rpi_example.py'
+      - 'README.template.md'
+
+permissions:
+  # Action이 레포지토리에 코드를 커밋하고 푸시할 수 있도록 권한을 부여합니다.
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv (Python Package Manager)
+        run: pip install uv
+
+      - name: Run build script to update README.md
+        run: uv run python build_readme.py
+
+      - name: Commit and push if README.md changed
+        # stefanzweifel/git-auto-commit-action을 사용하여 변경사항이 있을 때만 커밋합니다.
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(bot): auto-update README code snippets 🤖"
+          file_pattern: README.md
+          # 커밋할 사용자 정보 설정
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"
