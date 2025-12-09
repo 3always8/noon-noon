@@ -22,8 +22,11 @@ class NoonState:
     
     # [Emotion/Expression]
     eyebrow_lift: float = 0.0     # 눈썹 높이
+    eyebrow_shape: str = "arc"    # "arc", "angry"
     eyelid_top: float = 0.0       # 윗 눈꺼풀 닫힘 (0.0~1.0)
     eyelid_btm: float = 0.0       # 아랫 눈꺼풀 닫힘
     
     # [System]
     color: tuple = (180, 180, 180) # Main Eye Color
+    shake_x: float = 0.0
+    shake_y: float = 0.0

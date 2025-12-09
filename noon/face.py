@@ -20,6 +20,8 @@ class NoonFaceRenderer:
     def _draw_eye(self, state: NoonState, is_right: bool):
         # 1. 계산 (Engine 위임)
         cx, cy = self.engine.get_eye_center(is_right, state)
+        cx += state.shake_x
+        cy += state.shake_y
         w, h = self.engine.get_eye_dimensions(state)
         
         # 2. Outer Ring (도넛 몸통)
@@ -35,7 +37,7 @@ class NoonFaceRenderer:
         self._draw_highlight(cx, cy, inner_w, inner_h, state)
 
         # 5. Eyebrows
-        self._draw_eyebrow(cx, cy, w, h, state)
+        self._draw_eyebrow(cx, cy, w, h, state, is_right)
 
     def _draw_highlight(self, cx, cy, w, h, state):
         hl_w = w * 0.3 * state.highlight_scale
@@ -46,7 +48,22 @@ class NoonFaceRenderer:
         rect = pygame.Rect(hl_x - hl_w/2, hl_y - hl_h/2, hl_w, hl_h)
         pygame.draw.rect(self.screen, (255, 255, 255), rect, border_radius=int(hl_h))
 
-    def _draw_eyebrow(self, cx, cy, w, h, state):
-        brow_y = cy - (h * 0.6) - (state.eyebrow_lift * 20)
-        rect = pygame.Rect(cx - w * 0.6, brow_y - h * 0.3, w * 1.2, h * 0.6)
-        pygame.draw.arc(self.screen, state.color, rect, math.radians(40), math.radians(140), width=12)
+    def _draw_eyebrow(self, cx, cy, w, h, state, is_right: bool):
+        if state.eyebrow_shape == 'angry':
+            y_offset = cy - (h * 0.6) - (state.eyebrow_lift * 30)
+            x_extent = w * 0.6
+            angle_offset = w * 0.25
+            
+            if is_right:
+                start_pos = (cx - x_extent, y_offset + angle_offset)
+                end_pos = (cx + x_extent, y_offset - angle_offset)
+            else: # left eye
+                start_pos = (cx - x_extent, y_offset - angle_offset)
+                end_pos = (cx + x_extent, y_offset + angle_offset)
+            
+            pygame.draw.line(self.screen, state.color, start_pos, end_pos, width=14)
+        
+        else: # default "arc" shape
+            brow_y = cy - (h * 0.6) - (state.eyebrow_lift * 20)
+            rect = pygame.Rect(cx - w * 0.6, brow_y - h * 0.3, w * 1.2, h * 0.6)
+            pygame.draw.arc(self.screen, state.color, rect, math.radians(40), math.radians(140), width=12)
