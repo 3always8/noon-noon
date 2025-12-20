@@ -20,6 +20,14 @@ class NoonState:
     highlight_x: float = 0.3
     highlight_y: float = -0.3
     
+    # [Eye Movement Animation]
+    inner_hole_offset_x: float = 0.0  # Inner hole offset within outer ring (-1.0 ~ 1.0)
+    inner_hole_offset_y: float = 0.0
+    outer_ring_offset_x: float = 0.0  # Outer ring offset (follows inner hole with delay)
+    outer_ring_offset_y: float = 0.0
+    highlight_bounce_x: float = 0.0  # Highlight bounce/recoil effect
+    highlight_bounce_y: float = 0.0
+    
     # [Emotion/Expression]
     eyebrow_lift: float = 0.0     # 눈썹 높이
     eyebrow_shape: str = "arc"    # "arc", "angry"
