@@ -58,14 +58,19 @@ class EyeTracker:
         # 스무딩을 위한 이전 값들
         self.prev_gaze_x = 0.0
         self.prev_gaze_y = 0.0
+        self.gaze_velocity_x = 0.0
+        self.gaze_velocity_y = 0.0
         
         # 얼굴 중심점 (정규화된 좌표)
         self.face_center_x = 0.5
         self.face_center_y = 0.5
+        self.face_velocity_x = 0.0
+        self.face_velocity_y = 0.0
         
         # 얼굴 크기 추적 (정규화된 값, 0.0~1.0)
         self.face_size_normalized = 0.5  # 기본값
         self.prev_face_size = 0.5
+        self.face_size_velocity = 0.0
         
         # 얼굴 크기 범위 설정 (화면 대비 최소/최대 비율)
         self.min_face_ratio = 0.1   # 화면의 10% (멀리 있을 때)
@@ -73,6 +78,16 @@ class EyeTracker:
         
         # ring_inner_ratio 변화 속도 (낮을수록 부드러움)
         self.ring_ratio_smoothing = 0.1
+        
+        # 적응형 스무딩을 위한 변수
+        self.adaptive_smoothing_factor = smoothing_factor
+        self.movement_threshold = 0.02  # 움직임 감지 임계값
+        self.fast_movement_factor = 0.5  # 빠른 움직임일 때 스무딩 감소
+        self.slow_movement_factor = 0.9  # 느린 움직임일 때 스무딩 증가
+        
+        # 얼굴 손실 추적
+        self.face_lost_frames = 0
+        self.max_lost_frames = 10  # 얼굴이 감지되지 않을 때 유지할 프레임 수
         
     def start(self) -> bool:
         """웹캠을 시작합니다."""
@@ -228,27 +243,73 @@ class EyeTracker:
             face_center_x, face_center_y = self._get_face_center_opencv(frame)
         
         if face_center_x is None or face_center_y is None:
-            # 얼굴이 감지되지 않으면 이전 값 유지 (ring_inner_ratio는 기본값으로 복귀)
+            # 얼굴이 감지되지 않으면 프레임 카운터 증가
+            self.face_lost_frames += 1
+            
+            # 얼굴이 일정 시간 동안 감지되지 않으면 부드럽게 기본값으로 복귀
+            if self.face_lost_frames > self.max_lost_frames:
+                # 속도 감쇠
+                self.face_velocity_x *= 0.9
+                self.face_velocity_y *= 0.9
+                self.gaze_velocity_x *= 0.9
+                self.gaze_velocity_y *= 0.9
+                
+                # 기본값으로 부드럽게 복귀
+                self.face_center_x = 0.5 + (self.face_center_x - 0.5) * 0.95
+                self.face_center_y = 0.5 + (self.face_center_y - 0.5) * 0.95
+                
+                # Gaze 값도 중앙으로 복귀
+                gaze_x = (self.prev_gaze_x * 0.95)
+                gaze_y = (self.prev_gaze_y * 0.95)
+                state.gaze_x = gaze_x
+                state.gaze_y = gaze_y
+                self.prev_gaze_x = gaze_x
+                self.prev_gaze_y = gaze_y
+                
+                self.face_size_normalized = 0.5 + (self.face_size_normalized - 0.5) * 0.95
+                self._update_ring_inner_ratio(state, img_width, img_height)
+            
             self.face_rect = None
             self.left_eye_pos = None
             self.right_eye_pos = None
-            self.face_size_normalized = 0.5  # 기본값으로 리셋
+            
             if self.show_preview:
                 self._draw_tracking_rectangle(frame)
                 cv2.imshow('User Face', frame)
                 cv2.waitKey(1)
-            # 얼굴이 없을 때도 ring_inner_ratio를 부드럽게 기본값으로 복귀
-            self._update_ring_inner_ratio(state, img_width, img_height)
             return False
         
-        # 얼굴 중심 위치를 스무딩
+        # 얼굴이 감지되면 프레임 카운터 리셋
+        self.face_lost_frames = 0
+        
+        # 얼굴 중심 위치를 적응형 스무딩으로 업데이트
+        face_delta_x = face_center_x - self.face_center_x
+        face_delta_y = face_center_y - self.face_center_y
+        face_movement = abs(face_delta_x) + abs(face_delta_y)
+        
+        # 움직임 속도에 따라 적응형 스무딩 적용
+        if face_movement > self.movement_threshold:
+            # 빠른 움직임: 더 빠른 반응
+            adaptive_factor = self.fast_movement_factor
+        else:
+            # 느린 움직임: 더 부드러운 스무딩
+            adaptive_factor = self.slow_movement_factor
+        
+        # 속도 기반 예측 (간단한 물리 시뮬레이션)
+        self.face_velocity_x = self.face_velocity_x * 0.7 + face_delta_x * 0.3
+        self.face_velocity_y = self.face_velocity_y * 0.7 + face_delta_y * 0.3
+        
+        # 예측된 위치로 스무딩 (속도 고려)
+        predicted_x = face_center_x + self.face_velocity_x * 0.3
+        predicted_y = face_center_y + self.face_velocity_y * 0.3
+        
         self.face_center_x = (
-            self.smoothing_factor * self.face_center_x + 
-            (1 - self.smoothing_factor) * face_center_x
+            adaptive_factor * self.face_center_x + 
+            (1 - adaptive_factor) * predicted_x
         )
         self.face_center_y = (
-            self.smoothing_factor * self.face_center_y + 
-            (1 - self.smoothing_factor) * face_center_y
+            adaptive_factor * self.face_center_y + 
+            (1 - adaptive_factor) * predicted_y
         )
         
         # gaze 값 계산
@@ -256,14 +317,31 @@ class EyeTracker:
             self.face_center_x, self.face_center_y
         )
         
-        # 스무딩 적용
+        # Gaze 값 적응형 스무딩
+        gaze_delta_x = gaze_x - self.prev_gaze_x
+        gaze_delta_y = gaze_y - self.prev_gaze_y
+        gaze_movement = abs(gaze_delta_x) + abs(gaze_delta_y)
+        
+        if gaze_movement > self.movement_threshold:
+            adaptive_gaze_factor = self.fast_movement_factor
+        else:
+            adaptive_gaze_factor = self.slow_movement_factor
+        
+        # Gaze 속도 추적
+        self.gaze_velocity_x = self.gaze_velocity_x * 0.7 + gaze_delta_x * 0.3
+        self.gaze_velocity_y = self.gaze_velocity_y * 0.7 + gaze_delta_y * 0.3
+        
+        # 예측된 gaze 값
+        predicted_gaze_x = gaze_x + self.gaze_velocity_x * 0.2
+        predicted_gaze_y = gaze_y + self.gaze_velocity_y * 0.2
+        
         gaze_x = (
-            self.smoothing_factor * self.prev_gaze_x + 
-            (1 - self.smoothing_factor) * gaze_x
+            adaptive_gaze_factor * self.prev_gaze_x + 
+            (1 - adaptive_gaze_factor) * predicted_gaze_x
         )
         gaze_y = (
-            self.smoothing_factor * self.prev_gaze_y + 
-            (1 - self.smoothing_factor) * gaze_y
+            adaptive_gaze_factor * self.prev_gaze_y + 
+            (1 - adaptive_gaze_factor) * predicted_gaze_y
         )
         
         # 상태 업데이트
@@ -321,10 +399,26 @@ class EyeTracker:
             else:
                 normalized_size = (face_ratio - self.min_face_ratio) / (self.max_face_ratio - self.min_face_ratio)
             
+            # 얼굴 크기 변화량 계산
+            size_delta = normalized_size - self.face_size_normalized
+            size_movement = abs(size_delta)
+            
+            # 적응형 스무딩
+            if size_movement > 0.05:
+                size_factor = self.fast_movement_factor
+            else:
+                size_factor = self.slow_movement_factor
+            
+            # 속도 추적
+            self.face_size_velocity = self.face_size_velocity * 0.7 + size_delta * 0.3
+            
+            # 예측된 크기
+            predicted_size = normalized_size + self.face_size_velocity * 0.2
+            
             # 스무딩 적용
             self.face_size_normalized = (
-                self.smoothing_factor * self.face_size_normalized +
-                (1 - self.smoothing_factor) * normalized_size
+                size_factor * self.face_size_normalized +
+                (1 - size_factor) * predicted_size
             )
         else:
             # 얼굴이 없으면 기본값(0.5)으로 부드럽게 복귀

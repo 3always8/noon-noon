@@ -44,7 +44,10 @@ class NoonFaceRenderer:
         # 4. Reflection (알약 하이라이트) - inner hole 위치 기준으로 bounce 적용
         self._draw_highlight(inner_cx, inner_cy, inner_w, inner_h, state)
 
-        # 5. Eyebrows - outer ring 위치 기준
+        # 5. Eyelids (눈꺼풀) - 깜빡임 효과
+        self._draw_eyelids(outer_cx, outer_cy, w, h, state)
+
+        # 6. Eyebrows - outer ring 위치 기준
         self._draw_eyebrow(outer_cx, outer_cy, w, h, state, is_right)
 
     def _draw_highlight(self, cx, cy, w, h, state):
@@ -57,6 +60,20 @@ class NoonFaceRenderer:
         rect = pygame.Rect(hl_x - hl_w/2, hl_y - hl_h/2, hl_w, hl_h)
         pygame.draw.rect(self.screen, (255, 255, 255), rect, border_radius=int(hl_h))
 
+    def _draw_eyelids(self, cx, cy, w, h, state):
+        """눈꺼풀을 그립니다. 깜빡임 효과를 위해 사용됩니다."""
+        if state.eyelid_top > 0.0:
+            # 윗 눈꺼풀
+            eyelid_height = h * 0.5 * state.eyelid_top
+            eyelid_rect = pygame.Rect(cx - w/2, cy - h/2, w, eyelid_height)
+            pygame.draw.ellipse(self.screen, self.bg_color, eyelid_rect)
+        
+        if state.eyelid_btm > 0.0:
+            # 아랫 눈꺼풀
+            eyelid_height = h * 0.5 * state.eyelid_btm
+            eyelid_rect = pygame.Rect(cx - w/2, cy + h/2 - eyelid_height, w, eyelid_height)
+            pygame.draw.ellipse(self.screen, self.bg_color, eyelid_rect)
+    
     def _draw_eyebrow(self, cx, cy, w, h, state, is_right: bool):
         if state.eyebrow_shape == 'angry':
             y_offset = cy - (h * 0.6) - (state.eyebrow_lift * 30)
